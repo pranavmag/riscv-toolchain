@@ -20,8 +20,8 @@ public:
 private:
 	// Statements (Recursive Descent Parsing)
 	std::unique_ptr<Stmt> statement();
-	std::unique_ptr<Stmt> varDeclaration();
-	std::unique_ptr<Stmt> retStatement();
+	std::unique_ptr<Stmt> varDeclaration(Token type, Token name);
+	std::unique_ptr<Stmt> funcDeclaration(Token returnType, Token name);	std::unique_ptr<Stmt> retStatement();
 	std::unique_ptr<Stmt> ifStatement();
 	std::unique_ptr<Stmt> whileStatement();
 	std::unique_ptr<Stmt> blockStatement();

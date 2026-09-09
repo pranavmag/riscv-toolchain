@@ -10,9 +10,11 @@
 enum class IROp {
 	ADD, SUB, MUL, DIV, REM, 
 	NEG, NOT,
-	LOAD_IMM,
+	LOAD_IMM, MOV,
 	PARAM, CALL,
 	RET,
+	BEQ, JUMP,
+	EQ, NE, LT, LE, GT, GE,
 	UNKNOWN,
 };
 
@@ -20,6 +22,7 @@ enum class OperandType {
 	VREG,
 	IMM,
 	LABEL,
+	FUNC,
 	NONE
 };
 

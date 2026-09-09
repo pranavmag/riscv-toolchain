@@ -2,7 +2,6 @@
 #include <vector>
 #include <string>
 #include <memory>
-#include <variant>
 
 bool Parser::check(TokenType type) const {
 	if (!isAtEnd()) {
@@ -97,7 +96,16 @@ int Parser::bindingPower(Token token) {
 }
 
 std::unique_ptr<Stmt> Parser::statement() {
-	if (match({ TokenType::INT, TokenType::FLOAT, TokenType::VOID, TokenType::CHAR })) return varDeclaration();
+	if (match({ TokenType::INT, TokenType::FLOAT, TokenType::VOID, TokenType::CHAR })) {
+		Token type = previous();
+		Token name = consume(TokenType::IDENTIFIER, "Expected name after type.");
+		
+		if (check(TokenType::LEFT_PAREN)) {
+			return funcDeclaration(type, name);
+		}
+
+		return varDeclaration(type, name);
+	}
 	if (match({ TokenType::RETURN })) return retStatement();
 	if (match({ TokenType::IF })) return ifStatement();
 	if (match({ TokenType::WHILE })) return whileStatement();
@@ -162,8 +170,9 @@ std::unique_ptr<Stmt> Parser::whileStatement() {
 }
 
 // int x = 34; int x;
-std::unique_ptr<Stmt> Parser::varDeclaration() {
-	Token name = consume(TokenType::IDENTIFIER, "Expected variable name.");
+std::unique_ptr<Stmt> Parser::varDeclaration(Token type, Token name) {
+	(void)type;
+
 	std::unique_ptr<Expr> initializer = nullptr;
 	if (match({ TokenType::EQUAL })) {
 		initializer = parseExpr(0);
@@ -171,11 +180,9 @@ std::unique_ptr<Stmt> Parser::varDeclaration() {
 
 	consume(TokenType::SEMICOLON, "Expected ';' after initializer.");
 
-	return std::make_unique<VarDeclStmt>(
-		name,
-		std::move(initializer)
-	);
+	return std::make_unique<VarDeclStmt>(name, std::move(initializer));
 }
+
 
 // {statement; statement; statement;}
 std::unique_ptr<Stmt> Parser::blockStatement() {
@@ -314,5 +321,28 @@ std::vector<std::unique_ptr<Stmt>> Parser::parseCode() {
 	}
 
 	return stmts;
+}
+
+std::unique_ptr<Stmt> Parser::funcDeclaration(Token returnType, Token name) {
+	consume(TokenType::LEFT_PAREN, "Expected '(' after function name.");
+	std::vector<Param> params;
+
+	if (!check(TokenType::RIGHT_PAREN)) {
+		do {
+			if (!match({ TokenType::INT, TokenType::FLOAT, TokenType::VOID, TokenType::CHAR })) {
+				throw ParseError("Expected parameter type.");
+			}
+			Token paramType = previous();
+			Token paramName = consume(TokenType::IDENTIFIER, "Expected parameter name.");
+			params.push_back(Param{ paramType, paramName });
+		} while (match({ TokenType::COMMA }));
+	}
+
+	consume(TokenType::RIGHT_PAREN, "Expected ')' after parameters.");
+	consume(TokenType::LEFT_BRACE, "Expected '{' before function body.");
+
+	auto body = blockStatement();
+
+	return std::make_unique<FuncDeclNode>(returnType, name, std::move(params), std::move(body));
 }
 

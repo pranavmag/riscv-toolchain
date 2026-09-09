@@ -59,6 +59,7 @@ struct IdentifierNode : Expr {
 	int accept(ExprVisitor& v) override;
 };
 
+
 // func(arg1, arg2, arg3, ...)
 struct FuncCallNode : Expr {
 	std::unique_ptr<Expr> funcName;
@@ -140,6 +141,24 @@ struct ExprStmt : Stmt {
 	std::unique_ptr<Expr> expr;
 
 	ExprStmt(std::unique_ptr<Expr> expr) : expr(std::move(expr)) {}
+
+	void accept(StmtVisitor& v) override;
+};
+
+struct Param {
+	Token type;
+	Token name;
+};
+
+struct FuncDeclNode : Stmt {
+	Token returnType;
+	Token name;
+	std::vector<Param> params;
+	std::unique_ptr<Stmt> body;
+
+	FuncDeclNode(Token returnType, Token name, std::vector<Param> params, std::unique_ptr<Stmt> body)
+		: returnType(std::move(returnType)), name(std::move(name)), params(std::move(params)), body(std::move(body)) {
+	}
 
 	void accept(StmtVisitor& v) override;
 };

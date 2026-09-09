@@ -30,6 +30,7 @@ public:
 
     int visitLiteralNode(LiteralNode& n) override {
         print("Literal");
+        (void)n;
         return 0;
     }
 
@@ -94,5 +95,12 @@ public:
         indent_++;
         n.expr->accept(*this);
         indent_--;
+    }
+
+    void visitFuncDecl(FuncDeclNode& n) override {
+	    print("FuncDecl: " + n.name.lexeme);
+	    indent_++;
+	    n.body->accept(*this);
+	    indent_--;
     }
 };

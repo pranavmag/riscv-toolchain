@@ -1,8 +1,6 @@
 # pragma once
 
 #include "ast.h"
-#include <variant>
-#include <string>
 
 struct ExprVisitor {
 	virtual ~ExprVisitor() = default;
@@ -24,5 +22,6 @@ struct StmtVisitor {
 	virtual void visitWhile(WhileStmt& n) = 0;
 	virtual void visitBlock(BlockStmt& n) = 0;
 	virtual void visitExpr(ExprStmt& n) = 0;
+	virtual void visitFuncDecl(FuncDeclNode& n) = 0;
 };
 

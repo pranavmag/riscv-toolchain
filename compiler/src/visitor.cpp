@@ -47,6 +47,10 @@ void ExprStmt::accept(StmtVisitor& v) {
 	v.visitExpr(*this);
 }
 
+void FuncDeclNode::accept(StmtVisitor& v) {
+	v.visitFuncDecl(*this);
+}
+
 
 
 
