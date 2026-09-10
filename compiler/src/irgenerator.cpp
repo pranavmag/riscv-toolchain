@@ -1,4 +1,5 @@
 #include "irgenerator.h"
+#include "regalloc.h"
 #include <vector>
 #include <iostream>
 #include <stdexcept>
@@ -397,6 +398,13 @@ void IRGenerator::visitFuncDecl(FuncDeclNode& n) {
 	currentFunction_ = previousFunction;
 }
 
+void IRGenerator::allocateRegisters() {
+	RegisterAllocator allocator;
+	for (auto& func : functions_) {
+		allocator.allocate(*func);
+	}
+}
+
 void IRGenerator::printIR() {
 	for (const auto& func : functions_) {
 		std::cout << "function " << func->name << ":\n";
@@ -407,6 +415,22 @@ void IRGenerator::printIR() {
 				std::cout << operatorToString(quad.op) << " ";
 				std::cout << operandToString(quad.src1) << " ";
 				std::cout << operandToString(quad.src2) << " \n";
+			}
+		}
+	}
+}
+
+void IRGenerator::printAllocations() {
+	for (const auto& func : functions_) {
+		std::cout << "function " << func->name << " (frame size " << func->frameSize << " bytes):\n";
+		for (int vreg = 1; vreg < func->vregCounter; ++vreg) {
+			std::cout << "  v" << vreg << " -> ";
+			auto it = func->vregLocations.find(vreg);
+			if (it != func->vregLocations.end() && it->second.kind == LocationKind::StackSlot) {
+				std::cout << it->second.value << "(fp)\n";
+			}
+			else {
+				std::cout << "unallocated\n";
 			}
 		}
 	}

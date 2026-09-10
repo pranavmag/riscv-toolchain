@@ -55,6 +55,8 @@ void run(std::string_view source, ErrorHandling& errorhandling, IRGenerator& irG
 		}
 
 		irGen.printIR();
+		irGen.allocateRegisters();
+		irGen.printAllocations();
 	}
 	catch (const std::runtime_error& e) {
 		std::cerr << e.what() << '\n';

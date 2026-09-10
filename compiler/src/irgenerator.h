@@ -7,6 +7,20 @@
 #include <unordered_map>
 #include <string>
 
+// Where a vreg ends up living, once allocated. Today only StackSlot is
+// ever produced (naive allocator, everything on the stack) -- PhysReg
+// exists so a future linear-scan allocator can hand out real registers
+// without Codegen's interface changing at all.
+enum class LocationKind {
+	StackSlot,
+	PhysReg,
+};
+
+struct Location {
+	LocationKind kind{ LocationKind::StackSlot };
+	int value{}; // StackSlot: byte offset from the frame pointer (negative). PhysReg: register number.
+};
+
 // Everything a single function needs to compile itself in isolation:
 // its own CFG, its own vreg/block numbering, and its own scope stack.
 // A function must NOT see its caller's locals, so scopes live here,
@@ -24,6 +38,9 @@ struct Function {
 	std::vector<std::unordered_map<std::string, int>> scopes;
 
 	std::vector<int> paramVRegs;
+
+	std::unordered_map<int, Location> vregLocations;
+	int frameSize{};
 };
 
 class IRGenerator : public ExprVisitor, public StmtVisitor {
@@ -62,10 +79,7 @@ private:
 
 public:
 	IRGenerator() {
-		// the top-level program is itself just a function ("main") --
-		// this keeps every other visitor method oblivious to whether
-		// it's compiling top-level code or a user-declared function
-		currentFunction_ = createFunction("main");
+		currentFunction_ = createFunction("<entry>");
 		currentFunction_->currentBlock = createBlock();
 		pushScope();
 	}
@@ -84,7 +98,10 @@ public:
 	void visitExpr(ExprStmt& n) override;
 	void visitFuncDecl(FuncDeclNode& n) override;
 
+	void allocateRegisters();
+
 	void printIR();
+	void printAllocations();
 	std::string operandToString(Operand operand);
 	std::string operatorToString(IROp operand);
 };
