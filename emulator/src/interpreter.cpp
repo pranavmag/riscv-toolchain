@@ -3,7 +3,6 @@
 #include <vector>
 #include <array>
 #include <iostream>
-#include <algorithm>
 #include <cstdint>
 #include <cmath>
 #include <cstring>
@@ -467,7 +466,7 @@ void Core::executeStage(Memory& mem) {
 	}
 	case::Instruction::FSQRT: {
 		float value = id_ex_reg.rs1FValue;
-		aluFResult = std::sqrtf(value);
+		aluFResult = std::sqrt(value);
 		break;
 	}
 	case::Instruction::FMIN: {

@@ -3,6 +3,7 @@
 #include "parser.h"
 #include "astprinter.h"
 #include "irgenerator.h"
+#include "codegen.h"
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -25,6 +26,23 @@ void runFile(const std::string& filePath, ErrorHandling& errHandler) {
 	buffer << file.rdbuf();
 	run(buffer.str(), errHandler, irGen);
 	if (errHandler.hasError) {
+		std::exit(2);
+	}
+
+	irGen.finalizeFunctions();
+	irGen.allocateRegisters();
+
+	try {
+		Codegen codegen;
+		std::string asmOutput = codegen.generate(irGen.getFunctions());
+
+		std::string outPath = filePath + ".s";
+		std::ofstream outFile(outPath);
+		outFile << asmOutput;
+		std::cout << "Wrote assembly to " << outPath << '\n';
+	}
+	catch (const std::runtime_error& e) {
+		std::cerr << "Codegen error: " << e.what() << '\n';
 		std::exit(2);
 	}
 }

@@ -39,6 +39,7 @@ struct Function {
 
 	std::vector<int> paramVRegs;
 
+	// filled in by RegisterAllocator::allocate() -- empty/zero until then
 	std::unordered_map<int, Location> vregLocations;
 	int frameSize{};
 };
@@ -79,6 +80,12 @@ private:
 
 public:
 	IRGenerator() {
+		// "<entry>" can never collide with a real user identifier: the lexer's
+		// identifier() rule only starts a token when isAlpha(c) is true (a
+		// letter or '_'), so no user-written name can ever contain '<'. This
+		// keeps the implicit top-level program un-nameable and un-callable
+		// from user code, and leaves "main" completely free for the user to
+		// declare like any other ordinary function name.
 		currentFunction_ = createFunction("<entry>");
 		currentFunction_->currentBlock = createBlock();
 		pushScope();
@@ -99,6 +106,9 @@ public:
 	void visitFuncDecl(FuncDeclNode& n) override;
 
 	void allocateRegisters();
+	void finalizeFunctions();
+
+	const std::vector<std::unique_ptr<Function>>& getFunctions() const { return functions_; }
 
 	void printIR();
 	void printAllocations();

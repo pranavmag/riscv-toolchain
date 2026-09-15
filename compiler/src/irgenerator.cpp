@@ -281,6 +281,9 @@ void IRGenerator::visitIf(IfStmt& n) {
 	branchQuad.src2 = { OperandType::IMM, 0 };
 	emit(branchQuad);
 
+	// explicit jump to thenBlock -- never rely on it being physically next.
+	// Nested control flow inside n.branch/n.elseBranch will insert blocks
+	// into cfg between branchBlock and thenBlock, breaking fall-through.
 	Quad jumpToThen;
 	jumpToThen.op = IROp::JUMP;
 	jumpToThen.dest = { OperandType::LABEL, thenBlock->id };
@@ -338,6 +341,9 @@ void IRGenerator::visitWhile(WhileStmt& n) {
 	branchQuad.src2 = { OperandType::IMM, 0 };
 	emit(branchQuad);
 
+	// explicit jump to bodyBlock -- same reasoning as visitIf: a nested
+	// if/while inside n.body inserts blocks into cfg between condBlock
+	// and bodyBlock, so fall-through can't be trusted here either.
 	Quad jumpToBody;
 	jumpToBody.op = IROp::JUMP;
 	jumpToBody.dest = { OperandType::LABEL, bodyBlock->id };
@@ -396,6 +402,42 @@ void IRGenerator::visitFuncDecl(FuncDeclNode& n) {
 	popScope();
 
 	currentFunction_ = previousFunction;
+}
+
+void IRGenerator::finalizeFunctions() {
+	// Codegen assumes every function's IR ends in a RET (that's what its
+	// epilogue/ret lowering is attached to) -- without this, any function
+	// that falls off the end of its body without an explicit `return`
+	// (or has a branch path that does, like an if with no else and no
+	// trailing code) leaves that block with no terminator at all, and the
+	// emitted machine code falls straight through into whatever comes
+	// next in the file. Close that gap here, once, after all real IR has
+	// been generated, so Codegen never has to special-case it.
+	for (auto& fn : functions_) {
+		BasicBlock* lastBlock = fn->currentBlock;
+		bool endsInReturn = !lastBlock->instructions.empty()
+			&& lastBlock->instructions.back().op == IROp::RET;
+
+		if (endsInReturn) {
+			continue;
+		}
+
+		int zeroReg = fn->vregCounter++;
+
+		Quad loadZero;
+		loadZero.dest = { OperandType::VREG, zeroReg };
+		loadZero.src1 = { OperandType::IMM, 0 };
+		loadZero.src2 = { OperandType::NONE, 0 };
+		loadZero.op = IROp::LOAD_IMM;
+		lastBlock->instructions.push_back(loadZero);
+
+		Quad retQuad;
+		retQuad.dest = { OperandType::VREG, zeroReg };
+		retQuad.src1 = { OperandType::NONE, 0 };
+		retQuad.src2 = { OperandType::NONE, 0 };
+		retQuad.op = IROp::RET;
+		lastBlock->instructions.push_back(retQuad);
+	}
 }
 
 void IRGenerator::allocateRegisters() {
