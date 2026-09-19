@@ -2,11 +2,6 @@
 
 #include <vector>
 
-// struct of quads - destination register, source register 1 and 2 (operands), and operator
-// struct of operand
-// enum of operandType
-// enum of RISC-V Assembly mappings
-
 enum class IROp {
 	ADD, SUB, MUL, DIV, REM, 
 	NEG, NOT,
@@ -15,6 +10,7 @@ enum class IROp {
 	RET,
 	BEQ, JUMP,
 	EQ, NE, LT, LE, GT, GE,
+	PRINT,
 	UNKNOWN,
 };
 

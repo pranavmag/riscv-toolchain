@@ -1,6 +1,6 @@
 # pragma once
 
-#include "irgenerator.h"
+#include "irgenerator.h" // for Function, Quad, Operand, Location
 #include <string>
 #include <sstream>
 #include <vector>
@@ -16,17 +16,20 @@
 // prologue/epilogue uniform: entry only differs from a user function by
 // who calls it, not by how it's generated.
 //
-// Scope note: this first pass only lowers what straight-line arithmetic
-// and `return` need (LOAD_IMM, MOV, ADD/SUB/MUL/DIV/REM, RET). Anything
-// else (branches, calls) hits the "not yet supported" throw further down --
-// deliberately, so an unsupported program fails loudly instead of silently
-// emitting wrong code.
+// Scope note: straight-line arithmetic, return, branches, and function
+// calls (PARAM/CALL, up to 8 args -- no stack-passed args yet) are all
+// lowered. Anything else still hits a "not yet supported" throw.
 class Codegen {
 public:
 	std::string generate(const std::vector<std::unique_ptr<Function>>& functions);
 
 private:
 	std::ostringstream out_;
+
+	// how many PARAM quads have been seen since the last CALL -- decides
+	// which of a0..a7 the next PARAM's value lands in. Reset to 0 by
+	// every CALL (and defensively at the top of each function).
+	int pendingParamCount_ = 0;
 
 	void emitFunction(const Function& fn);
 	void emitQuad(const Function& fn, const Quad& q);
@@ -40,4 +43,9 @@ private:
 	void storeResult(const Function& fn, const Operand& dest, const std::string& reg);
 
 	std::string funcLabel(const Function& fn);
+
+	// Block ids reset to 1 per function (see IRGenerator::createBlock), so
+	// a label needs to be qualified by function to avoid collisions -- L2
+	// in one function is unrelated to L2 in another.
+	std::string blockLabel(const Function& fn, int blockId);
 };

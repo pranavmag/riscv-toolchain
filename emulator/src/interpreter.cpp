@@ -3,6 +3,7 @@
 #include <vector>
 #include <array>
 #include <iostream>
+#include <algorithm>
 #include <cstdint>
 #include <cmath>
 #include <cstring>
@@ -137,15 +138,33 @@ void Core::decodeStage(Memory& mem) {
 
 	DecodedInstruction inst = decodeInstruction(if_id_reg.bits);
 
+	// Only loads (and float loads) need a stall here -- their value isn't
+	// known until MEM, so the forwarding paths in executeStage() can't
+	// supply it in time; ordinary ALU results are forwarded there with
+	// no stall needed (see the Forwarding Engine in executeStage()).
+	// ECALL is the one case worth checking for explicitly: its real
+	// encoding has no rs1/rs2 fields (see the 0x73 case in decoder.cpp),
+	// so the generic usesRs1/usesRs2 checks below can't see that it
+	// implicitly reads a7 (x17) and a0 (x10) by ABI convention.
 	bool isLoadUse = (id_ex_reg.inst.type == InstructionType::LOAD || id_ex_reg.inst.type == InstructionType::FPL);
 
 	if (!id_ex_reg.bubble && isLoadUse && id_ex_reg.inst.rd != 0) {
-		bool uses1 = usesRs1(inst.type);
-		bool uses2 = usesRs2(inst.type);
-		bool uses3 = usesRs3(inst.type);
+		bool dependsOnRd = false;
 
-		if ((uses1 && id_ex_reg.inst.rd == inst.rs1) || (uses2 && id_ex_reg.inst.rd == inst.rs2) ||
-			(uses3 && id_ex_reg.inst.rd == inst.rs3)) {
+		if (inst.name == Instruction::ECALL) {
+			dependsOnRd = (id_ex_reg.inst.rd == 17) || (id_ex_reg.inst.rd == 10);
+		}
+		else {
+			bool uses1 = usesRs1(inst.type);
+			bool uses2 = usesRs2(inst.type);
+			bool uses3 = usesRs3(inst.type);
+
+			dependsOnRd = (uses1 && id_ex_reg.inst.rd == inst.rs1)
+				|| (uses2 && id_ex_reg.inst.rd == inst.rs2)
+				|| (uses3 && id_ex_reg.inst.rd == inst.rs3);
+		}
+
+		if (dependsOnRd) {
 			loadUseHazard = true;
 			next_id_ex_reg.bubble = true;
 			return;
@@ -156,6 +175,20 @@ void Core::decodeStage(Memory& mem) {
 
 	uint32_t rs1_value = readReg(inst.rs1);
 	uint32_t rs2_value = readReg(inst.rs2);
+
+	// ECALL's ABI convention reads a7 (syscall number) and a0 (argument),
+	// but its real RV32I encoding has no rs1/rs2 fields to decode them
+	// from (see the 0x73 case in decoder.cpp), so there's nothing there
+	// to capture by default. Explicitly capture them here so they go
+	// through the same decode-time pipeline register as every other
+	// instruction's operands, instead of being read live -- and thus
+	// un-pipelined, and vulnerable to stale values whenever a bubble
+	// from an earlier branch shifts the write-back timing -- at execute
+	// time.
+	if (inst.name == Instruction::ECALL) {
+		rs1_value = readReg(17); // a7
+		rs2_value = readReg(10); // a0
+	}
 
 	float rs1_fvalue = readFReg(inst.rs1);
 	float rs2_fvalue = readFReg(inst.rs2);
@@ -189,17 +222,23 @@ void Core::executeStage(Memory& mem) {
 	// MEM Hazard
 	if (!mem_wb_reg.bubble && writesToRegister(mem_wb_reg.inst.type)) {
 		bool memIsFloat = isFloat(mem_wb_reg.inst.type);
-		bool memUsesRs1 = usesRs1(inst.type);
-		bool memUsesRs2 = usesRs2(inst.type);
+		bool isEcall = (inst.name == Instruction::ECALL);
+		bool memUsesRs1 = isEcall || usesRs1(inst.type);
+		bool memUsesRs2 = isEcall || usesRs2(inst.type);
 		bool memUsesRs3 = usesRs3(inst.type);
+		// ECALL's real encoding has no rs1/rs2 fields (see decoder.cpp,
+		// case 0x73), so it implicitly targets a7/a0 here rather than
+		// whatever inst.rs1/inst.rs2 decoded to (0/0).
+		uint32_t rs1ForForwarding = isEcall ? 17u : inst.rs1;
+		uint32_t rs2ForForwarding = isEcall ? 10u : inst.rs2;
 
 		if (memIsFloat || mem_wb_reg.inst.rd != 0) {
 			uint32_t memInt = (mem_wb_reg.inst.type == InstructionType::LOAD) ? mem_wb_reg.memRead : mem_wb_reg.aluResult;
 			float memFloat = (mem_wb_reg.inst.type == InstructionType::FPL) ? mem_wb_reg.memFRead : mem_wb_reg.aluFResult;
-			if (memUsesRs1 && inst.rs1 == mem_wb_reg.inst.rd) {
+			if (memUsesRs1 && rs1ForForwarding == mem_wb_reg.inst.rd) {
 				if (memIsFloat) id_ex_reg.rs1FValue = memFloat; else id_ex_reg.rs1Value = memInt;
 			}
-			if (memUsesRs2 && inst.rs2 == mem_wb_reg.inst.rd) {
+			if (memUsesRs2 && rs2ForForwarding == mem_wb_reg.inst.rd) {
 				if (memIsFloat) id_ex_reg.rs2FValue = memFloat; else id_ex_reg.rs2Value = memInt;
 			}
 			if (memUsesRs3 && inst.rs3 == mem_wb_reg.inst.rd) {
@@ -211,15 +250,18 @@ void Core::executeStage(Memory& mem) {
 	// EX Hazard
 	if (!ex_mem_reg.bubble && writesToRegister(ex_mem_reg.inst.type)) {
 		bool exIsFloat = isFloat(ex_mem_reg.inst.type);
-		bool exUsesRs1 = usesRs1(inst.type);
-		bool exUsesRs2 = usesRs2(inst.type);
+		bool isEcall = (inst.name == Instruction::ECALL);
+		bool exUsesRs1 = isEcall || usesRs1(inst.type);
+		bool exUsesRs2 = isEcall || usesRs2(inst.type);
 		bool exUsesRs3 = usesRs3(inst.type);
+		uint32_t rs1ForForwarding = isEcall ? 17u : inst.rs1;
+		uint32_t rs2ForForwarding = isEcall ? 10u : inst.rs2;
 
 		if (exIsFloat || ex_mem_reg.inst.rd != 0) {
-			if (exUsesRs1 && inst.rs1 == ex_mem_reg.inst.rd) {
+			if (exUsesRs1 && rs1ForForwarding == ex_mem_reg.inst.rd) {
 				if (exIsFloat) id_ex_reg.rs1FValue = ex_mem_reg.aluFResult; else id_ex_reg.rs1Value = ex_mem_reg.aluResult;
 			}
-			if (exUsesRs2 && inst.rs2 == ex_mem_reg.inst.rd) {
+			if (exUsesRs2 && rs2ForForwarding == ex_mem_reg.inst.rd) {
 				if (exIsFloat) id_ex_reg.rs2FValue = ex_mem_reg.aluFResult; else id_ex_reg.rs2Value = ex_mem_reg.aluResult;
 			}
 			if (exUsesRs3 && inst.rs3 == ex_mem_reg.inst.rd) {
@@ -639,10 +681,10 @@ void Core::executeStage(Memory& mem) {
 		return;
 	}
 	case Instruction::ECALL: {
-		uint32_t command = readReg(17);
+		uint32_t command = id_ex_reg.rs1Value; // a7, captured at decode -- see decodeStage()
 
 		if (command == 1) {
-			std::cout << static_cast<int32_t>(readReg(10)) << '\n';
+			std::cout << static_cast<int32_t>(id_ex_reg.rs2Value) << '\n'; // a0
 		}
 		else if (command == 93) {
 			halted = true;

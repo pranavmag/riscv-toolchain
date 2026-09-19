@@ -68,6 +68,7 @@ std::string IRGenerator::operatorToString(IROp operand) {
 	case IROp::LE: return "LE";
 	case IROp::GT: return "GT";
 	case IROp::GE: return "GE";
+	case IROp::PRINT: return "PRINT";
 	default: return "Unknown OP";
 	}
 }
@@ -189,6 +190,35 @@ int IRGenerator::visitFuncCallNode(FuncCallNode& n) {
 	auto* funcIdent = dynamic_cast<IdentifierNode*>(n.funcName.get());
 	if (!funcIdent) {
 		throw std::runtime_error("Function call target must be a function name.");
+	}
+
+	if (funcIdent->name.lexeme == "print") {
+		if (n.args.size() != 1) {
+			throw std::runtime_error("print() takes exactly one argument.");
+		}
+		int argReg = n.args[0]->accept(*this);
+
+		Quad printQuad;
+		printQuad.dest = { OperandType::NONE, 0 };
+		printQuad.src1 = { OperandType::VREG, argReg };
+		printQuad.src2 = { OperandType::NONE, 0 };
+		printQuad.op = IROp::PRINT;
+		emit(printQuad);
+
+		// print() has no real return value, but this function must return
+		// an int (FuncCallNode is an Expr) -- give call sites a well-defined
+		// vreg (0), the same convention finalizeFunctions() uses for an
+		// implicit `return 0;`, rather than an uninitialized stack slot a
+		// call site like `int y = print(x);` could silently read.
+		int destReg = allocateVReg();
+		Quad zeroQuad;
+		zeroQuad.dest = { OperandType::VREG, destReg };
+		zeroQuad.src1 = { OperandType::IMM, 0 };
+		zeroQuad.src2 = { OperandType::NONE, 0 };
+		zeroQuad.op = IROp::LOAD_IMM;
+		emit(zeroQuad);
+
+		return destReg;
 	}
 
 	auto found = functionTable_.find(funcIdent->name.lexeme);
